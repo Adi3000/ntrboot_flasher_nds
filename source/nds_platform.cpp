@@ -108,8 +108,17 @@ return_codes_t InjectFIRM(flashcart_core::Flashcart* cart, bool isDevMode)
 		return NO_BACKUP_FOUND;
 	} free(backup_path);
 
-	FILE *FileIn = fopen("fat:/ntrboot/boot9strap_ntr.firm", "rb");
-	if (!FileIn) { 
+	uint8_t* blowfish_key = NULL;
+	FILE* FileIn = NULL;
+
+	if (!isDevMode) {
+		FileIn = fopen("/ntrboot/boot9strap_ntr.firm", "rb");
+		blowfish_key = (uint8_t*)blowfish_retail_bin;
+	} else {
+		FileIn = fopen("/ntrboot/boot9strap_ntr_dev.firm", "rb");
+		blowfish_key = (uint8_t*)blowfish_dev_bin;
+	}
+	if (!FileIn) {
 		fatUnmount("fat:/");
 		return FILE_OPEN_FAILED; 
 	}
