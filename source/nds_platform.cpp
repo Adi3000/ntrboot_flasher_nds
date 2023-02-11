@@ -3,7 +3,9 @@
 #include <nds/arm9/dldi.h>
 #include <fat.h>
 #include "device.h"
-#include "binaries.h"
+#include "blowfish_ntr_bin.h"
+#include "blowfish_dev_bin.h"
+#include "blowfish_retail_bin.h"
 #define FONT_WIDTH  6
 #define FONT_HEIGHT 10
 #include "ui.h"
@@ -125,7 +127,7 @@ return_codes_t InjectFIRM(flashcart_core::Flashcart* cart, bool isDevMode)
 	fclose(FileIn);
 	fatUnmount("fat:/"); //We must unmount *before* calling any flashcart_core functions
 
-	if (!cart->injectNtrBoot((isDevMode) ? blowfish_dev_bin : blowfish_retail_bin, FIRM, filesize)) {
+	if (!cart->injectNtrBoot(blowfish_key, FIRM, filesize)) {
 		delete[] FIRM;
 		return INJECT_OR_DUMP_FAILED; //FIRM injection failed
 	}
