@@ -15,6 +15,24 @@
 
 int progressCount = 0;
 
+bool file_exists(const char* filename) {
+	return access(filename, F_OK) == 0;
+}
+
+return_codes_t mount_fat(void) {
+	if(!file_exists("sd:/") && !file_exists("fat:/")) {
+		return fatInitDefault() ? ALL_OK : FAT_MOUNT_FAILED;
+	}
+	return ALL_OK;
+}
+
+return_codes_t unmount_fat(void) {
+	if(file_exists("fat:/")) {
+		fatUnmount("fat:/");
+	}
+	return ALL_OK;
+}
+
 namespace flashcart_core {
 	namespace platform {
 		void showProgress(std::uint32_t current, std::uint32_t total, const char *status) {
@@ -33,12 +51,10 @@ namespace flashcart_core {
 			if (priority < global_loglevel) { return 0; }
 
 			static bool first_open = true;
-			if (!fatInitDefault()) { return -1; }
-
-			mkdir("fat:/ntrboot", 0700); //If the directory exists, this line isn't going to crash the program or anything like that
+			if (mount_fat() != ALL_OK) { return -1; }
 
 			// Overwrite if this is our first time opening the file.
-			FILE *logfile = fopen("fat:/ntrboot/ntrboot.log", first_open ? "w" : "a");
+			FILE *logfile = fopen("/ntrboot/ntrboot.log", first_open ? "w" : "a");
 			if (!logfile) { return -1; }
 			first_open = false;
 
@@ -59,7 +75,7 @@ namespace flashcart_core {
 
 			int result = vfprintf(logfile, string_to_write, args);
 			fclose(logfile);
-			fatUnmount("fat:/");
+			unmount_fat();
 			va_end(args);
 
 			return result;
@@ -80,15 +96,6 @@ namespace flashcart_core {
 	}
 }
 
-bool file_exists(const char* filename) {
-    if (FILE* file = fopen(filename, "r")) {
-        fclose(file);
-        return true;
-    } else {
-		return false;
-	}
-}
-
 static char* calculate_backup_path(const char *cart_name) {
     int path_len = snprintf(NULL, 0, "fat:/ntrboot/%s-backup.bin", cart_name) + 1;
     char *path = (char *)malloc(path_len);
@@ -98,15 +105,15 @@ static char* calculate_backup_path(const char *cart_name) {
 
 return_codes_t InjectFIRM(flashcart_core::Flashcart* cart, bool isDevMode)
 {
-	if (!fatInitDefault()) { return FAT_MOUNT_FAILED; } //Fat mount failed
-	
+	if (mount_fat() != ALL_OK) { return FAT_MOUNT_FAILED; } //Fat mount failed
+
 	char* backup_path = calculate_backup_path(cart->getShortName());
 
 	if (!file_exists(backup_path)) {
-		fatUnmount("fat:/");
 		free(backup_path);
 		return NO_BACKUP_FOUND;
-	} free(backup_path);
+	}
+	free(backup_path);
 
 	uint8_t* blowfish_key = NULL;
 	FILE* FileIn = NULL;
@@ -118,8 +125,8 @@ return_codes_t InjectFIRM(flashcart_core::Flashcart* cart, bool isDevMode)
 		FileIn = fopen("/ntrboot/boot9strap_ntr_dev.firm", "rb");
 		blowfish_key = (uint8_t*)blowfish_dev_bin;
 	}
-	if (!FileIn) {
-		fatUnmount("fat:/");
+
+	if (!FileIn) { 
 		return FILE_OPEN_FAILED; 
 	}
 	fseek(FileIn, 0, SEEK_END);
@@ -130,17 +137,16 @@ return_codes_t InjectFIRM(flashcart_core::Flashcart* cart, bool isDevMode)
 	if (fread(FIRM, 1, filesize, FileIn) != filesize) {
 		delete[] FIRM;
 		fclose(FileIn);
-		fatUnmount("fat:/");
 		return FILE_IO_FAILED; //File reading failed
 	}
 	fclose(FileIn);
-	fatUnmount("fat:/"); //We must unmount *before* calling any flashcart_core functions
+	unmount_fat(); //We must unmount *before* calling any flashcart_core functions
 
 	if (!cart->injectNtrBoot(blowfish_key, FIRM, filesize)) {
 		delete[] FIRM;
 		return INJECT_OR_DUMP_FAILED; //FIRM injection failed
 	}
-	
+
 	delete[] FIRM;
 	return ALL_OK;
 }
