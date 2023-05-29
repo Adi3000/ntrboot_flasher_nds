@@ -2,11 +2,11 @@ name: Build ntrboot_flasher_nds
 
 on:
   push:
-    branches: ["*"]
+    branches: ["adi3000/*"]
     paths-ignore:
       - 'README.md'
   pull_request:
-    branches: ["*"]
+    branches: ["adi3000/*"]
     paths-ignore:
       - 'README.md'
 
