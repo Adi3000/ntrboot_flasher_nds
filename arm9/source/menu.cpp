@@ -1,5 +1,6 @@
 #include "menu.h"
 #include <nds.h>
+#include <ncgcpp/ntrcard.h>
 #include "ui.h"
 #define FONT_WIDTH  6
 #define FONT_HEIGHT 10
@@ -127,7 +128,27 @@ void menu_lvl1(Flashcart* cart, bool isDevMode)
 				reprintFlag = true;
 			}
 		}
-
+		if (keysDown() & KEY_LEFT)
+		{
+			cart = flashcart_list->at(menu_sel); //Set the cart equal to whatever we had selected from before
+			card->init()
+			ncgc::Err err = m_card->init();
+			if (err && !err.unsupported()) {
+				logMessage(LOG_ERR, "r4isdhc: trySecureInit: ntrcard::init failed");
+				DrawString(TOP_SCREEN, FONT_WIDTH, 8 * FONT_HEIGHT, COLOR_RED, "trySecureInit: ntrcard::init failed\nPress <B>");
+				while (true) { scanKeys(); if (keysDown() & KEY_B) { DrawHeader(TOP_SCREEN, "Select flashcart", ((SCREENWIDTH - (16 * FONT_WIDTH)) / 2)); DrawInfo(global_loglevel); break; } }
+			} else if (m_card->state() != ncgc::NTRState::Raw) {
+				logMessage(LOG_ERR, "r4isdhc: trySecureInit: status (%d) not RAW and cannot reset",
+					static_cast<uint32_t>(m_card->state()));
+				DrawString(TOP_SCREEN, FONT_WIDTH, 8 * FONT_HEIGHT, COLOR_RED, "r4isdhc: trySecureInit: status not RAW\nPress <B>");
+				while (true) { scanKeys(); if (keysDown() & KEY_B) { DrawHeader(TOP_SCREEN, "Select flashcart", ((SCREENWIDTH - (16 * FONT_WIDTH)) / 2)); DrawInfo(global_loglevel); break; } }
+			} else {
+				logMessage(LOG_INFO, "r4isdhc: trySecureInit: status (%d) OK",
+					static_cast<uint32_t>(m_card->state()));
+				DrawString(TOP_SCREEN, FONT_WIDTH, 8 * FONT_HEIGHT, COLOR_RED, "r4isdhc: Looks good\nPress <B>");
+				while (true) { scanKeys(); if (keysDown() & KEY_B) { DrawHeader(TOP_SCREEN, "Select flashcart", ((SCREENWIDTH - (16 * FONT_WIDTH)) / 2)); DrawInfo(global_loglevel); break; } }
+			}
+		}
 		if (reprintFlag)
 		{
 			cart = flashcart_list->at(menu_sel);
