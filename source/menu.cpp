@@ -45,25 +45,52 @@ void WaitPress(u32 KEY) {
 	while (true) { scanKeys(); if (keysDown() & KEY) { break; } }
 }
 
+bool ntrCardReset()
+{
+	if (isDSiMode())
+	{
+		// Reset card slot
+		disableSlot1();
+		for(int i = 0; i < 25; i++) { swiWaitForVBlank(); }
+		enableSlot1();
+		for(int i = 0; i < 15; i++) { swiWaitForVBlank(); }
+	}
+	else
+	{
+		REG_ROMCTRL = 0;
+		REG_AUXSPICNT = 0;
+		for (int i = 0; i < 25; i++) swiWaitForVBlank();
+		REG_AUXSPICNT = CARD_CR1_ENABLE | CARD_CR1_IRQ;
+		REG_ROMCTRL = CARD_nRESET | CARD_SEC_SEED;
+		while (REG_ROMCTRL & CARD_BUSY) ;
+		cardReset();
+		while (REG_ROMCTRL & CARD_BUSY) ;
+	}
+	return true;
+}
+
 void menu_lvl1(Flashcart* cart, bool isDevMode)
 {
 	u32 menu_sel = 0;
-	NTRCard card(nullptr);
+	
+	NTRCard card(ntrCardReset);
 	DrawHeader(TOP_SCREEN, "Select flashcart", ((SCREENWIDTH - (16 * FONT_WIDTH)) / 2));
 	DrawInfo(global_loglevel);
 	DrawHeader(BOTTOM_SCREEN, "Flashcart info", ((SCREENWIDTH - (14 * FONT_WIDTH)) / 2));
 	DrawStringF(BOTTOM_SCREEN, FONT_WIDTH, FONT_HEIGHT * 2, COLOR_WHITE, "%s\n%s", flashcart_list->at(0)->getAuthor(), flashcart_list->at(0)->getDescription());
+	u32 flashcart_list_size = flashcart_list->size();
 
 	while (true) //This will be our MAIN loop
 	{
 		bool reprintFlag = false;
-		for (u32 i = 0; i < flashcart_list->size(); i++)
+
+		for (u32 i = 0; i < flashcart_list_size; i++)
 		{
 			cart = flashcart_list->at(i);
 			DrawString(TOP_SCREEN, FONT_WIDTH, ((i + 2) * FONT_HEIGHT), (i == menu_sel) ? COLOR_RED : COLOR_WHITE, cart->getName());
 		}
 		scanKeys();
-		if (keysDown() & KEY_DOWN && menu_sel < (flashcart_list->size() - 1))
+		if (keysDown() & KEY_DOWN && menu_sel < (flashcart_list_size - 1))
 		{
 			menu_sel++;
 			reprintFlag = true;
@@ -85,7 +112,8 @@ void menu_lvl1(Flashcart* cart, bool isDevMode)
 		if (keysDown() & KEY_A)
 		{
 			cart = flashcart_list->at(menu_sel); //Set the cart equal to whatever we had selected from before
-			card.state(NTRState::Key2);
+			if (isDSiMode() || strcmp(cart->getShortName(), "DSTT") == 0) card.init();
+			else card.state(NTRState::Key2);
 			if (!cart->initialize(&card)) //If cart initialization fails, do all this and then break to main menu
 			{
 				DrawString(TOP_SCREEN, FONT_WIDTH, 8 * FONT_HEIGHT, COLOR_RED, "Flashcart setup failed!\nPress <B>");
@@ -119,7 +147,12 @@ void menu_lvl2(Flashcart* cart, bool isDevMode)
 		scanKeys();
 		DrawString(TOP_SCREEN, FONT_WIDTH, (2 * FONT_HEIGHT), (menu_sel == 0) ? COLOR_RED : COLOR_WHITE, "Inject FIRM");	//0
 		DrawString(TOP_SCREEN, FONT_WIDTH, (3 * FONT_HEIGHT), (menu_sel == 1) ? COLOR_RED : COLOR_WHITE, "Dump flash");		//1
-		if (keysDown() & KEY_DOWN && menu_sel < 1)
+		if(isDSiMode())
+		{
+			DrawString(TOP_SCREEN, FONT_WIDTH, (4 * FONT_HEIGHT), (menu_sel == 2) ? COLOR_RED : COLOR_WHITE, "Restore flash");	//2
+		}
+
+		if (keysDown() & KEY_DOWN && menu_sel < (isDSiMode() ? 2 : 1))
 		{
 			menu_sel++;
 		}
@@ -141,9 +174,10 @@ void menu_lvl2(Flashcart* cart, bool isDevMode)
 				ClearScreen(BOTTOM_SCREEN, COLOR_BLACK);
 				if (menu_sel == 0) {
 					ntrboot_return = InjectFIRM(cart, isDevMode);
-				} 
-				else {
+				} else if (menu_sel == 1) {
 					ntrboot_return = DumpFlash(cart);
+				} else if (menu_sel == 2) {
+					ntrboot_return = RestoreFlash(cart);
 				}
 
 				switch (ntrboot_return) {

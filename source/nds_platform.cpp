@@ -97,9 +97,9 @@ namespace flashcart_core {
 }
 
 static char* calculate_backup_path(const char *cart_name) {
-    int path_len = snprintf(NULL, 0, "fat:/ntrboot/%s-backup.bin", cart_name) + 1;
+    int path_len = snprintf(NULL, 0, "/ntrboot/%s-backup.bin", cart_name) + 1;
     char *path = (char *)malloc(path_len);
-    snprintf(path, path_len, "fat:/ntrboot/%s-backup.bin", cart_name);
+    snprintf(path, path_len, "/ntrboot/%s-backup.bin", cart_name);
     return path;
 }
 
@@ -154,13 +154,9 @@ return_codes_t InjectFIRM(flashcart_core::Flashcart* cart, bool isDevMode)
 return_codes_t DumpFlash(flashcart_core::Flashcart* cart)
 {
 	u32 Flash_size = cart->getMaxLength(); //Get the flashrom size
-	const u32 chunkSize = 0x80000; // chunk out in half megabyte chunks out to avoid ram limitations
+	const u32 chunkSize = std::min(Flash_size, 0x80000lu); // chunk out in half megabyte chunks out to avoid ram limitations
 
-	if (!fatInitDefault()) { return FAT_MOUNT_FAILED; }
-
-	mkdir("fat:/ntrboot", 0700); //If the directory exists, this line isn't going to crash the program or anything like that
-
-	fatUnmount("fat:/");
+	if (mount_fat() != ALL_OK) { return FAT_MOUNT_FAILED; }
 
 	char* backup_path = calculate_backup_path(cart->getShortName());
 
@@ -169,17 +165,20 @@ return_codes_t DumpFlash(flashcart_core::Flashcart* cart)
 	for (u32 chunkOffset = 0; chunkOffset < Flash_size; chunkOffset += chunkSize) {
 		DrawRectangle(TOP_SCREEN, FONT_WIDTH, SCREEN_HEIGHT - FONT_HEIGHT * 2, SCREEN_WIDTH, FONT_HEIGHT, COLOR_BLACK);
 		DrawStringF(TOP_SCREEN, FONT_WIDTH, SCREEN_HEIGHT - FONT_HEIGHT * 2, COLOR_WHITE, "Reading at 0x%x", chunkOffset);
+		SetProgressOverride(chunkOffset, Flash_size);
 
 		if (!cart->readFlash(chunkOffset, chunkSize, Flashrom)) {
 			delete[] Flashrom;
 			free(backup_path);
+			SetProgressOverride(0, 0); // Reset override
 			return INJECT_OR_DUMP_FAILED; //Flash reading failed
 		}
 
-		if (!fatInitDefault())
+		if (mount_fat() != ALL_OK)
 		{
 			delete[] Flashrom;
 			free(backup_path);
+			SetProgressOverride(0, 0); // Reset override
 			return FAT_MOUNT_FAILED; //Fat init failed
 		}
 
@@ -187,27 +186,75 @@ return_codes_t DumpFlash(flashcart_core::Flashcart* cart)
 		if (!FileOut) {
 			delete[] Flashrom;
 			fclose(FileOut);
-			fatUnmount("fat:/");
 			free(backup_path);
+			SetProgressOverride(0, 0); // Reset override
 			return FILE_OPEN_FAILED; //File opening failed
 		}
 
 		if (fwrite(Flashrom, 1, chunkSize, FileOut) != chunkSize) {
 			delete[] Flashrom;
 			fclose(FileOut);
-			fatUnmount("fat:/");
 			free(backup_path);
+			SetProgressOverride(0, 0); // Reset override
 			return FILE_IO_FAILED; //File writing failed
 		}
 
 		fclose(FileOut);
-		fatUnmount("fat:/");
+		unmount_fat();
 	}
 
-	//Draw a black rectangle over the old "Reading at..." message to clear it away
-	DrawRectangle(TOP_SCREEN, FONT_WIDTH, SCREEN_HEIGHT - 2 * FONT_HEIGHT, 20 * FONT_WIDTH, FONT_HEIGHT, COLOR_BLACK);
+	SetProgressOverride(0, 0); // Reset override
+	ShowProgress(BOTTOM_SCREEN, Flash_size, Flash_size, "");
 
 	free(backup_path);
+	delete[] Flashrom;
+	return ALL_OK;
+}
+
+return_codes_t RestoreFlash(flashcart_core::Flashcart* cart)
+{
+	u32 Flash_size = cart->getMaxLength(); //Get the flashrom size
+	const u32 chunkSize = std::min(Flash_size, 0x80000lu); // chunk out in half megabyte chunks out to avoid ram limitations
+
+	if (mount_fat() != ALL_OK) { return FAT_MOUNT_FAILED; }
+
+	char* backup_path = calculate_backup_path(cart->getShortName());
+
+	FILE *FileIn = fopen(backup_path, "rb");
+	if (!FileIn) {
+		free(backup_path);
+		return NO_BACKUP_FOUND; //File opening failed
+	}
+
+	u8 *Flashrom = new u8[chunkSize]; //Allocate a new array to store the flashrom we are about to write to the flashcart
+
+	for (u32 chunkOffset = 0; chunkOffset < Flash_size; chunkOffset += chunkSize) {
+		DrawRectangle(TOP_SCREEN, FONT_WIDTH, SCREEN_HEIGHT - FONT_HEIGHT * 2, SCREEN_WIDTH, FONT_HEIGHT, COLOR_BLACK);
+		DrawStringF(TOP_SCREEN, FONT_WIDTH, SCREEN_HEIGHT - FONT_HEIGHT * 2, COLOR_WHITE, "Writing at 0x%x", chunkOffset);
+		SetProgressOverride(chunkOffset, Flash_size);
+
+		if (fread(Flashrom, 1, chunkSize, FileIn) != chunkSize) {
+			delete[] Flashrom;
+			fclose(FileIn);
+			free(backup_path);
+			SetProgressOverride(0, 0); // Reset override
+			return FILE_IO_FAILED; //File reading failed
+		}
+
+		if (!cart->writeFlash(chunkOffset, chunkSize, Flashrom)) {
+			delete[] Flashrom;
+			free(backup_path);
+			fclose(FileIn);
+			SetProgressOverride(0, 0); // Reset override
+			return INJECT_OR_DUMP_FAILED; //Flash writing failed
+		}
+	}
+
+	SetProgressOverride(0, 0); // Reset override
+	ShowProgress(BOTTOM_SCREEN, Flash_size, Flash_size, "");
+
+	free(backup_path);
+	fclose(FileIn);
 	delete[] Flashrom;
 	return ALL_OK;
 }
