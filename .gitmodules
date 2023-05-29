@@ -1,6 +1,7 @@
 [submodule "external/flashcart_core"]
 	path = arm9/external/flashcart_core
 	url = https://github.com/Adi3000/flashcart_core
+	branch = master
 [submodule "external/libncgc"]
 	path = arm9/external/libncgc
 	url = https://github.com/angelsl/libncgc
