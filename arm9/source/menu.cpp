@@ -87,11 +87,6 @@ void menu_lvl1(Flashcart* cart, bool isDevMode)
 		for (u32 i = 0; i < flashcart_list_size; i++)
 		{
 			cart = flashcart_list->at(i);
-			if (!isDSiMode() && strcmp(cart->getShortName(), "R4iSDHC.hk") == 0) // R4iSDHC.hk only support init from RAW, so hide it on DSMode
-			{
-				flashcart_list_size--;
-				break; // because R4iSDHC.hk is the last one of flashcart_list
-			}
 			DrawString(TOP_SCREEN, FONT_WIDTH, ((i + 2) * FONT_HEIGHT), (i == menu_sel) ? COLOR_RED : COLOR_WHITE, cart->getName());
 		}
 		scanKeys();
